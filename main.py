@@ -1,5 +1,7 @@
 import os
 import logging
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Request, Response
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -11,19 +13,29 @@ from telegram.ext import (
     ContextTypes,
 )
 
-# Logging on kardi hai taaki koi error aaye toh clearly dikhe
-logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
+# Enable logging
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 
-# Settings from Render Environment Variables
+# Environment Variables Configuration
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_CHAT_ID = int(os.environ.get("ADMIN_CHAT_ID", "0"))
 UPI_ID = os.environ.get("UPI_ID", "YOUR_UPI_ID@okaxis")
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # e.g., https://your-app.onrender.com
 
+# Conversation States
 WAITING_FOR_SCREENSHOT, WAITING_FOR_USERNAME = range(2)
 
+# Global PTB Application Instance
+ptb_app = Application.builder().token(BOT_TOKEN).build()
+
+
+# --- Bot Command & Conversation Handlers ---
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Sends welcome message with package choices."""
     keyboard = [
         [InlineKeyboardButton("🛒 Buy 100 Points (Rs 10)", callback_data="pkg_100_10")],
         [InlineKeyboardButton("🛒 Buy 500 Points (Rs 45)", callback_data="pkg_500_45")],
@@ -32,95 +44,168 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        "👋 Welcome to the *FollowXchange Payment Bot*!\n\n"
+        "👋 Welcome to the **FollowXchange Payment Bot**!\n\n"
+        "Boost your profile quickly by purchasing points below. "
         "Select your preferred points package to continue:",
         reply_markup=reply_markup,
         parse_mode="Markdown"
     )
     return ConversationHandler.END
 
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Type /start to buy points. Follow the instructions to pay and upload screenshot.")
+    """Provides usage instructions."""
+    await update.message.reply_text(
+        "ℹ️ **How to buy points:**\n\n"
+        "1. Type /start and select a package.\n"
+        "2. Complete the payment using the generated UPI details.\n"
+        "3. Upload your payment screenshot directly into this chat.\n"
+        "4. Provide your FollowXchange platform username when prompted.\n"
+        "5. Wait briefly while our admin team verifies your transaction!",
+        parse_mode="Markdown"
+    )
+
 
 async def package_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles package clicks and displays payment links."""
     query = update.callback_query
     await query.answer()
     
     _, points, amount = query.data.split("_")
-    context.user_data["points"] = points
-    context.user_data["amount"] = amount
+    context.user_data["selected_points"] = points
+    context.user_data["selected_amount"] = amount
+    
+    # Generate deep-linking UPI URL
     upi_url = f"upi://pay?pa={UPI_ID}&pn=FollowXchange&am={amount}&cu=INR"
     
     await query.edit_message_text(
-        f"📊 *Package:* {points} Points for Rs {amount}\n\n"
-        f"💳 *Pay Here:* `{UPI_ID}`\n"
-        f"🔗 [Click to Pay via App]({upi_url})\n\n"
-        f"📸 *Next:* Upload your payment screenshot here.",
+        f"📊 **Package Selected:** {points} Points for Rs {amount}\n\n"
+        f"💳 **How to Pay:**\n"
+        f"• Tap to copy UPI ID: `{UPI_ID}`\n"
+        f"• Or use this link to open your payment app: [Pay Now via UPI]({upi_url})\n\n"
+        f"📸 **Next Step:**\n"
+        f"After completing your transaction, please upload your **payment screenshot** directly to this chat.",
         parse_mode="Markdown",
         disable_web_page_preview=True
     )
     return WAITING_FOR_SCREENSHOT
 
+
 async def screenshot_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["screenshot"] = update.message.photo[-1].file_id
-    await update.message.reply_text("✅ Screenshot received!\n⌨️ Now, type your *FollowXchange Username*:", parse_mode="Markdown")
+    """Saves screenshot file ID and prompts for user platform handle."""
+    photo_file_id = update.message.photo[-1].file_id
+    context.user_data["screenshot_file_id"] = photo_file_id
+    
+    await update.message.reply_text(
+        "✅ Screenshot received successfully!\n\n"
+        "⌨️ Please type your **FollowXchange Username** exactly as it appears on the website so we can credit your account:"
+    )
     return WAITING_FOR_USERNAME
 
+
 async def username_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Forwards submission dataset directly to administrative terminal."""
     fx_username = update.message.text.strip()
     user_chat_id = update.message.chat_id
-    points = context.user_data.get("points")
-    amount = context.user_data.get("amount")
-    screenshot = context.user_data.get("screenshot")
     
-    await update.message.reply_text("⏳ Please wait while Admin verifies your payment.")
+    points = context.user_data.get("selected_points", "Unknown")
+    amount = context.user_data.get("selected_amount", "Unknown")
+    screenshot = context.user_data.get("screenshot_file_id")
     
+    # Notify user submission is pending review
+    await update.message.reply_text(
+        "⏳ Thank you! Your payment details have been routed to our verification queue. "
+        "You will receive an automatic notification here once approved."
+    )
+    
+    # Generate evaluation components for administration panel
     admin_keyboard = [
         [
             InlineKeyboardButton("✅ Approve", callback_data=f"app_{user_chat_id}_{amount}_{points}"),
             InlineKeyboardButton("❌ Reject", callback_data=f"rej_{user_chat_id}_{amount}"),
         ]
     ]
+    admin_markup = InlineKeyboardMarkup(admin_keyboard)
     
+    admin_caption = (
+        f"🚨 **New Payment Verification Request**\n\n"
+        f"👤 **Platform Username:** `{fx_username}`\n"
+        f"🆔 **Telegram Chat ID:** `{user_chat_id}`\n"
+        f"📦 **Requested Item:** {points} Points\n"
+        f"💰 **Transaction Value:** Rs {amount}"
+    )
+    
+    # Forward complete packet to admin endpoint
     await context.bot.send_photo(
         chat_id=ADMIN_CHAT_ID,
         photo=screenshot,
-        caption=f"🚨 *New Payment*\nUsername: `{fx_username}`\nPoints: {points}\nAmount: Rs {amount}",
-        reply_markup=InlineKeyboardMarkup(admin_keyboard),
+        caption=admin_caption,
+        reply_markup=admin_markup,
         parse_mode="Markdown"
     )
+    
     context.user_data.clear()
     return ConversationHandler.END
+
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ Cancelled. Send /start again.")
+    """Cancels active conversation tracking state sequence."""
+    await update.message.reply_text("❌ Action cancelled. Type /start to open the package menu again.")
     context.user_data.clear()
     return ConversationHandler.END
 
+
 async def admin_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Processes verification decisions returned from administrative inputs."""
     query = update.callback_query
     await query.answer()
-    parts = query.data.split("_")
-    action, user_id, amount = parts[0], int(parts[1]), parts[2]
+    
+    data_parts = query.data.split("_")
+    action = data_parts[0]
+    target_user_id = int(data_parts[1])
+    amount = data_parts[2]
     
     if action == "app":
-        await context.bot.send_message(chat_id=user_id, text=f"🥳 *Approved!* Rs {amount} payment verified.", parse_mode="Markdown")
-        await query.edit_message_caption(caption=f"{query.message.caption}\n\n🟢 *APPROVED*", parse_mode="Markdown")
-    else:
-        await context.bot.send_message(chat_id=user_id, text=f"⚠️ *Rejected!* Rs {amount} payment failed verification.", parse_mode="Markdown")
-        await query.edit_message_caption(caption=f"{query.message.caption}\n\n🔴 *REJECTED*", parse_mode="Markdown")
+        points = data_parts[3]
+        # Notify user of successful account crediting
+        try:
+            await context.bot.send_message(
+                chat_id=target_user_id,
+                text=f"🥳 **Payment Confirmed!**\n\n"
+                     f"Your purchase of **{points} Points** (Rs {amount}) has been approved. "
+                     f"The tokens will appear in your platform dashboard momentarily.",
+                parse_mode="Markdown"
+            )
+            # Update admin view interface state
+            await query.edit_message_caption(
+                caption=f"{query.message.caption}\n\n🟢 **Status:** Approved by Admin.",
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logger.error(f"Failed to message user {target_user_id}: {e}")
+            
+    elif action == "rej":
+        try:
+            await context.bot.send_message(
+                chat_id=target_user_id,
+                text=f"⚠️ **Payment Verification Failed**\n\n"
+                     f"Your order matching Rs {amount} was rejected by verification. "
+                     f"Please confirm transaction logs, clear screenshots, or contact customer support.",
+                parse_mode="Markdown"
+            )
+            await query.edit_message_caption(
+                caption=f"{query.message.caption}\n\n🔴 **Status:** Rejected by Admin.",
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logger.error(f"Failed to message user {target_user_id}: {e}")
 
-def main():
-    # Crash rokne ke liye checks
-    if not BOT_TOKEN or not WEBHOOK_URL:
-        logger.error("🚨 BOT_TOKEN or WEBHOOK_URL is missing in Render Settings!")
-        return
 
-    # Render automatically provides a PORT variable
-    PORT = int(os.environ.get("PORT", "10000"))
+# --- FastAPI Engine Lifecycle Setup ---
 
-    app = Application.builder().token(BOT_TOKEN).build()
-
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Register core pipeline architectures
     conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(package_selected, pattern="^pkg_")],
         states={
@@ -129,19 +214,38 @@ def main():
         },
         fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start)],
     )
+    
+    ptb_app.add_handler(CommandHandler("start", start))
+    ptb_app.add_handler(CommandHandler("help", help_command))
+    ptb_app.add_handler(conv_handler)
+    ptb_app.add_handler(CallbackQueryHandler(admin_decision, pattern="^(app|rej)_"))
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(conv_handler)
-    app.add_handler(CallbackQueryHandler(admin_decision, pattern="^(app|rej)_"))
+    # Activate bot orchestration instances
+    await ptb_app.initialize()
+    await ptb_app.start()
+    await ptb_app.bot.set_webhook(url=f"{WEBHOOK_URL}/tgwebhook")
+    logger.info(f"Webhook set successfully to: {WEBHOOK_URL}/tgwebhook")
+    
+    yield
+    
+    # Graceful shutdown process execution
+    await ptb_app.stop()
+    await ptb_app.shutdown()
 
-    # Ye line server start karegi bina crash hue
-    logger.info("🚀 Starting Webhook Server...")
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        webhook_url=f"{WEBHOOK_URL}/tgwebhook"
-    )
 
-if __name__ == "__main__":
-    main()
+app = FastAPI(lifespan=lifespan)
+
+
+@app.post("/tgwebhook")
+async def handle_webhook(request: Request):
+    """Transforms webhook requests directly into Telegram pipeline signals."""
+    json_data = await request.json()
+    update = Update.de_json(json_data, ptb_app.bot)
+    await ptb_app.process_update(update)
+    return Response(status_code=200)
+
+
+@app.get("/")
+async def health_check():
+    """Serves response patterns satisfying hosting target keepalive requirements."""
+    return {"status": "online", "platform": "FollowXchange"}
