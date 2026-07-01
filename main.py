@@ -14,45 +14,46 @@ from telegram.ext import (
     ContextTypes,
 )
 
-
+# Enable logging
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-
+# Environment Variables Configuration
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_CHAT_ID = int(os.environ.get("ADMIN_CHAT_ID", "0"))
 UPI_ID = os.environ.get("UPI_ID", "YOUR_UPI_ID@okaxis")
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # e.g., https://your-app.onrender.com
 
-
+# Promo Codes
 PROMO_CODES = {
     "WELCOME20": {"discount_percent": 15, "active": True},
     "FESTIVAL10": {"discount_percent": 5, "active": True},
     "FREEDOM50": {"discount_percent": 10, "active": False} 
 }
 
+# FIXED: Removed spaces from variable names
+WEBSITE_URL = "https://followxchange.store"
+INSTAGRAM_PAGE = "https://www.instagram.com/followxchangeofcl?igsh=MWpha3o5ODNpYXNmZQ=="
 
-WEBSITE_ URL = "https://followxchange.store"
-Instagram PAGE = "https://www.instagram.com/followxchangeofcl?igsh=MWpha3o5ODNpYXNmZQ=="
 LEGAL_FOOTER = (
     "\n\n⚖️ *Legal & Privacy Agreement:*\n"
     "By proceeding with this transaction, you acknowledge and agree to our "
-    f"[Terms & Conditions]({https://followxchange.store/terms-conditions.html}/terms-conditions.html), "
-    f"[Privacy Policy]({https://followxchange.store/privacy-policy.html}/privacy-policy.html), and "
-    f"[Refund Policy]({https://followxchange.store/refund-policy.html}/refund-policy.html).\n"
+    f"[Terms & Conditions]({WEBSITE_URL}/terms-conditions.html), "
+    f"[Privacy Policy]({WEBSITE_URL}/privacy-policy.html), and "
+    f"[Refund Policy]({WEBSITE_URL}/refund-policy.html).\n"
     "⚠️ *Disclaimer:* FollowXchange is a 3rd-party growth service and is strictly NOT affiliated with, endorsed by, or connected to Instagram or Meta Platforms Inc."
 )
 
-
+# Conversation States
 WAITING_FOR_PROMO_DECISION, WAITING_FOR_PROMO, WAITING_FOR_SCREENSHOT, WAITING_FOR_USERNAME = range(4)
 
-
+# Global PTB Application Instance
 ptb_app = Application.builder().token(BOT_TOKEN).build()
 
 
-
+# --- Bot Command & Conversation Handlers ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Sends welcome message with package choices."""
@@ -106,7 +107,6 @@ async def package_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     _, followers_count, amount = query.data.split("_")
     
-    
     context.user_data["selected_followers"] = followers_count
     context.user_data["original_amount"] = float(amount)
     context.user_data["order_id"] = f"FX-{uuid.uuid4().hex[:6].upper()}" 
@@ -140,7 +140,6 @@ async def promo_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return WAITING_FOR_PROMO
     else:
-        
         context.user_data["final_amount"] = context.user_data["original_amount"]
         context.user_data["promo_applied"] = "None"
         return await show_payment_details(update, context, is_query=True)
@@ -158,7 +157,6 @@ async def promo_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if code in PROMO_CODES and PROMO_CODES[code]["active"]:
         discount = PROMO_CODES[code]["discount_percent"]
         orig_amount = context.user_data["original_amount"]
-        
         
         final_amount = orig_amount - (orig_amount * (discount / 100))
         context.user_data["final_amount"] = round(final_amount, 2)
@@ -232,14 +230,12 @@ async def username_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     order_id = context.user_data.get("order_id", "Unknown")
     screenshot = context.user_data.get("screenshot_file_id")
     
-    
     await update.message.reply_text(
         f"⏳ **Order Placed Successfully! (ID: {order_id})**\n\n"
         "Your payment and details have been securely routed to our verification queue. "
         "You will receive a confirmation message here as soon as our admins approve it.\n\n"
         "Thank you for choosing FollowXchange! ❤️"
     )
-    
     
     admin_keyboard = [
         [
@@ -258,7 +254,6 @@ async def username_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💰 **Amount Paid:** Rs {amount}\n"
         f"🎟 **Promo Used:** {promo}"
     )
-    
     
     await context.bot.send_photo(
         chat_id=ADMIN_CHAT_ID,
@@ -327,7 +322,7 @@ async def admin_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"Failed to message user {target_user_id}: {e}")
 
 
-
+# --- FastAPI Engine Lifecycle Setup ---
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -347,14 +342,12 @@ async def lifespan(app: FastAPI):
     ptb_app.add_handler(conv_handler)
     ptb_app.add_handler(CallbackQueryHandler(admin_decision, pattern="^(app|rej)_"))
 
-    
     await ptb_app.initialize()
     await ptb_app.start()
     await ptb_app.bot.set_webhook(url=f"{WEBHOOK_URL}/tgwebhook")
     logger.info(f"Webhook set successfully to: {WEBHOOK_URL}/tgwebhook")
     
     yield
-    
     
     await ptb_app.stop()
     await ptb_app.shutdown()
