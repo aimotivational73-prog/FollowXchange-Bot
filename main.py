@@ -37,16 +37,16 @@ ptb_app = Application.builder().token(BOT_TOKEN).build()
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Sends welcome message with package choices."""
     keyboard = [
-        [InlineKeyboardButton("🛒 Buy 100 Points (Rs 10)", callback_data="pkg_100_10")],
-        [InlineKeyboardButton("🛒 Buy 500 Points (Rs 45)", callback_data="pkg_500_45")],
-        [InlineKeyboardButton("🛒 Buy 1000 Points (Rs 80)", callback_data="pkg_1000_80")],
-        [InlineKeyboardButton("🛒 Buy 5000 Points (Rs 350)", callback_data="pkg_5000_350")],
+        [InlineKeyboardButton("🛒 Buy 100 Followers (Rs 20)", callback_data="pkg_100_20")],
+        [InlineKeyboardButton("🛒 Buy 500 Followers (Rs 55)", callback_data="pkg_500_55")],
+        [InlineKeyboardButton("🛒 Buy 1000 Followers (Rs 90)", callback_data="pkg_1000_90")],
+        [InlineKeyboardButton("🛒 Buy 5000 Followers (Rs 360)", callback_data="pkg_5000_360")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
         "👋 Welcome to the **FollowXchange Payment Bot**!\n\n"
-        "Boost your profile quickly by purchasing points below. "
-        "Select your preferred points package to continue:",
+        "Boost your profile quickly by purchasing followers below. "
+        "Select your preferred followers package to continue:",
         reply_markup=reply_markup,
         parse_mode="Markdown"
     )
@@ -56,7 +56,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Provides usage instructions."""
     await update.message.reply_text(
-        "ℹ️ **How to buy points:**\n\n"
+        "ℹ️ **How to buy followers:**\n\n"
         "1. Type /start and select a package.\n"
         "2. Complete the payment using the generated UPI details.\n"
         "3. Upload your payment screenshot directly into this chat.\n"
@@ -71,15 +71,15 @@ async def package_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    _, points, amount = query.data.split("_")
-    context.user_data["selected_points"] = points
+    _, followers_count, amount = query.data.split("_")
+    context.user_data["selected_followers"] = followers_count
     context.user_data["selected_amount"] = amount
     
     # Generate deep-linking UPI URL
     upi_url = f"upi://pay?pa={UPI_ID}&pn=FollowXchange&am={amount}&cu=INR"
     
     await query.edit_message_text(
-        f"📊 **Package Selected:** {points} Points for Rs {amount}\n\n"
+        f"📊 **Package Selected:** {followers_count} Followers for Rs {amount}\n\n"
         f"💳 **How to Pay:**\n"
         f"• Tap to copy UPI ID: `{UPI_ID}`\n"
         f"• Or use this link to open your payment app: [Pay Now via UPI]({upi_url})\n\n"
@@ -108,7 +108,7 @@ async def username_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     fx_username = update.message.text.strip()
     user_chat_id = update.message.chat_id
     
-    points = context.user_data.get("selected_points", "Unknown")
+    followers_count = context.user_data.get("selected_followers", "Unknown")
     amount = context.user_data.get("selected_amount", "Unknown")
     screenshot = context.user_data.get("screenshot_file_id")
     
@@ -121,7 +121,7 @@ async def username_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Generate evaluation components for administration panel
     admin_keyboard = [
         [
-            InlineKeyboardButton("✅ Approve", callback_data=f"app_{user_chat_id}_{amount}_{points}"),
+            InlineKeyboardButton("✅ Approve", callback_data=f"app_{user_chat_id}_{amount}_{followers_count}"),
             InlineKeyboardButton("❌ Reject", callback_data=f"rej_{user_chat_id}_{amount}"),
         ]
     ]
@@ -131,7 +131,7 @@ async def username_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🚨 **New Payment Verification Request**\n\n"
         f"👤 **Platform Username:** `{fx_username}`\n"
         f"🆔 **Telegram Chat ID:** `{user_chat_id}`\n"
-        f"📦 **Requested Item:** {points} Points\n"
+        f"📦 **Requested Item:** {followers_count} Followers\n"
         f"💰 **Transaction Value:** Rs {amount}"
     )
     
@@ -166,14 +166,14 @@ async def admin_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
     amount = data_parts[2]
     
     if action == "app":
-        points = data_parts[3]
+        followers_count = data_parts[3]
         # Notify user of successful account crediting
         try:
             await context.bot.send_message(
                 chat_id=target_user_id,
                 text=f"🥳 **Payment Confirmed!**\n\n"
-                     f"Your purchase of **{points} Points** (Rs {amount}) has been approved. "
-                     f"The tokens will appear in your platform dashboard momentarily.",
+                     f"Your purchase of **{followers_count} Followers** (Rs {amount}) has been approved. "
+                     f"The followers will appear in your platform dashboard momentarily.",
                 parse_mode="Markdown"
             )
             # Update admin view interface state
