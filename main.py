@@ -14,17 +14,17 @@ from telegram.ext import (
     ContextTypes,
 )
 
-# Enable logging
+
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Environment Variables Configuration
+
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_CHAT_ID = int(os.environ.get("ADMIN_CHAT_ID", "0"))
 UPI_ID = os.environ.get("UPI_ID", "YOUR_UPI_ID@okaxis")
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # e.g., https://your-app.onrender.com
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  
 
 # Promo Codes
 PROMO_CODES = {
@@ -33,9 +33,10 @@ PROMO_CODES = {
     "FREEDOM50": {"discount_percent": 10, "active": False} 
 }
 
-# FIXED: Removed spaces from variable names
+
 WEBSITE_URL = "https://followxchange.store"
 INSTAGRAM_PAGE = "https://www.instagram.com/followxchangeofcl?igsh=MWpha3o5ODNpYXNmZQ=="
+
 
 LEGAL_FOOTER = (
     "\n\n⚖️ *Legal & Privacy Agreement:*\n"
@@ -46,58 +47,97 @@ LEGAL_FOOTER = (
     "⚠️ *Disclaimer:* FollowXchange is a 3rd-party growth service and is strictly NOT affiliated with, endorsed by, or connected to Instagram or Meta Platforms Inc."
 )
 
-# Conversation States
+
 WAITING_FOR_PROMO_DECISION, WAITING_FOR_PROMO, WAITING_FOR_SCREENSHOT, WAITING_FOR_USERNAME = range(4)
 
-# Global PTB Application Instance
+
 ptb_app = Application.builder().token(BOT_TOKEN).build()
 
 
-# --- Bot Command & Conversation Handlers ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Sends welcome message with package choices."""
+    """Sends premium welcome message with 2 initial options."""
     keyboard = [
-        [InlineKeyboardButton("🛒 Buy 100 Followers (Rs 19)", callback_data="pkg_100_19")],
-        [InlineKeyboardButton("🛒 Buy 200 Followers (Rs 29)", callback_data="pkg_200_29")],
-        [InlineKeyboardButton("🛒 Buy 300 Followers (Rs 49)", callback_data="pkg_300_49")],
-        [InlineKeyboardButton("🛒 Buy 500 Followers (Rs 69)", callback_data="pkg_500_69")],
-        [InlineKeyboardButton("🛒 Buy 1000 Followers (Rs 119)", callback_data="pkg_1000_119")],
-        [InlineKeyboardButton("🛒 Buy 2500 Followers (Rs 249)", callback_data="pkg_2500_249")],
-        [InlineKeyboardButton("🛒 Buy 5000 Followers (Rs 499)", callback_data="pkg_5000_499")],
+        [InlineKeyboardButton("🛒 View Follower Packages", callback_data="show_packages")],
+        [InlineKeyboardButton("ℹ️ Help & Support", callback_data="help_info")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     welcome_text = (
-        "🌟 **Welcome to the FollowXchange Bot!** 🌟\n\n"
-        "Grow your Instagram presence instantly with our high-quality, authentic followers. "
-        "Secure your order by selecting a package below:\n"
+        "🌟 **Welcome to the Premium FollowXchange Bot!** 🌟\n\n"
+        "Grow your Instagram presence securely with our high-quality, authentic followers. "
+        "Please select an option below to get started:\n"
         f"{LEGAL_FOOTER}"
     )
     
-    await update.message.reply_text(
-        welcome_text,
-        reply_markup=reply_markup,
-        parse_mode="Markdown",
-        disable_web_page_preview=True
-    )
+    
+    if update.message:
+        await update.message.reply_text(
+            welcome_text,
+            reply_markup=reply_markup,
+            parse_mode="Markdown",
+            disable_web_page_preview=True
+        )
+    elif update.callback_query:
+        await update.callback_query.edit_message_text(
+            welcome_text,
+            reply_markup=reply_markup,
+            parse_mode="Markdown",
+            disable_web_page_preview=True
+        )
     return ConversationHandler.END
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Provides usage instructions."""
-    await update.message.reply_text(
+    help_text = (
         "ℹ️ **How to buy followers securely:**\n\n"
-        "1️⃣ Type /start and select your preferred package.\n"
+        "1️⃣ Click on 'View Follower Packages' and select one.\n"
         "2️⃣ Apply a Promo Code (if you have one) to get a discount.\n"
         "3️⃣ Complete the payment safely using the provided UPI details.\n"
         "4️⃣ Upload your successful payment screenshot here.\n"
         "5️⃣ Enter your exact FollowXchange App username.\n"
-        "6️⃣ Sit back! Our admin team will verify and deliver your followers quickly.\n\n"
-        f"Need more help? Contact our support via the website: {WEBSITE_URL}",
-        parse_mode="Markdown",
-        disable_web_page_preview=True
+        "6️⃣ Wait for admin verification (usually 5 mins - 2 hours).\n\n"
+        f"Need more help? Contact our support via the website: {WEBSITE_URL}"
     )
+    if update.message:
+        await update.message.reply_text(help_text, parse_mode="Markdown", disable_web_page_preview=True)
+    elif update.callback_query:
+        keyboard = [[InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_home")]]
+        await update.callback_query.edit_message_text(
+            help_text, 
+            reply_markup=InlineKeyboardMarkup(keyboard), 
+            parse_mode="Markdown", 
+            disable_web_page_preview=True
+        )
+
+
+async def main_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the 2 initial options on the welcome screen."""
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == "show_packages":
+        keyboard = [
+            [InlineKeyboardButton("🛒 Buy 100 Followers (Rs 19)", callback_data="pkg_100_19")],
+            [InlineKeyboardButton("🛒 Buy 200 Followers (Rs 29)", callback_data="pkg_200_29")],
+            [InlineKeyboardButton("🛒 Buy 300 Followers (Rs 49)", callback_data="pkg_300_49")],
+            [InlineKeyboardButton("🛒 Buy 500 Followers (Rs 69)", callback_data="pkg_500_69")],
+            [InlineKeyboardButton("🛒 Buy 1000 Followers (Rs 119)", callback_data="pkg_1000_119")],
+            [InlineKeyboardButton("🛒 Buy 2500 Followers (Rs 249)", callback_data="pkg_2500_249")],
+            [InlineKeyboardButton("🛒 Buy 5000 Followers (Rs 499)", callback_data="pkg_5000_499")],
+            [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_home")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            "📦 **Select your preferred followers package:**\nChoose a package below to proceed to checkout.",
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
+        )
+    elif query.data == "help_info":
+        await help_command(update, context)
+    elif query.data == "back_home":
+        await start(update, context)
 
 
 async def package_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -208,13 +248,14 @@ async def show_payment_details(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def screenshot_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Saves screenshot file ID and prompts for user platform handle."""
+    """Saves screenshot file ID and prompts for user platform handle with realistic timeframe."""
     photo_file_id = update.message.photo[-1].file_id
     context.user_data["screenshot_file_id"] = photo_file_id
     
     await update.message.reply_text(
-        "✅ **Screenshot Verified Securely!**\n\n"
-        "⌨️ Please type your exact **Username** (without @) so we can deliver your followers:"
+        "✅ **Screenshot Received Successfully!**\n\n"
+        "⏳ *Important Note: Payment verification is done manually. It usually takes between 5 minutes to 2 hours, but in rare cases may take up to 24 hours depending on network volume.*\n\n"
+        "⌨️ To proceed, please type your exact **FollowXchange Username** (without @) so we can locate your account:"
     )
     return WAITING_FOR_USERNAME
 
@@ -231,9 +272,9 @@ async def username_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     screenshot = context.user_data.get("screenshot_file_id")
     
     await update.message.reply_text(
-        f"⏳ **Order Placed Successfully! (ID: {order_id})**\n\n"
-        "Your payment and details have been securely routed to our verification queue. "
-        "You will receive a confirmation message here as soon as our admins approve it.\n\n"
+        f"✅ **Order Submitted! (ID: {order_id})**\n\n"
+        "Your payment proof and username have been routed to our verification team. "
+        "You will receive a notification in this chat as soon as our admins process and approve it.\n\n"
         "Thank you for choosing FollowXchange! ❤️"
     )
     
@@ -291,7 +332,7 @@ async def admin_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(
                 chat_id=target_user_id,
                 text=f"🥳 **PAYMENT APPROVED!**\n\n"
-                     f"Your purchase of **{followers_count} Followers** (Rs {amount}) has been successfully verified. "
+                     f"Your purchase of **{followers_count} Followers** (Rs {amount}) has been successfully verified! "
                      f"The followers will be routed to your account momentarily. Enjoy!\n\n"
                      f"Need more? Just type /start to order again.",
                 parse_mode="Markdown"
@@ -322,7 +363,6 @@ async def admin_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"Failed to message user {target_user_id}: {e}")
 
 
-# --- FastAPI Engine Lifecycle Setup ---
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -339,6 +379,10 @@ async def lifespan(app: FastAPI):
     
     ptb_app.add_handler(CommandHandler("start", start))
     ptb_app.add_handler(CommandHandler("help", help_command))
+    
+    
+    ptb_app.add_handler(CallbackQueryHandler(main_menu_handler, pattern="^(show_packages|help_info|back_home)$"))
+    
     ptb_app.add_handler(conv_handler)
     ptb_app.add_handler(CallbackQueryHandler(admin_decision, pattern="^(app|rej)_"))
 
