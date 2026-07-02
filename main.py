@@ -1,6 +1,7 @@
 import os
 import uuid
 import logging
+from datetime import datetime
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -14,29 +15,37 @@ from telegram.ext import (
     ContextTypes,
 )
 
-
+# Enable logging
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-
+# Environment Variables Configuration
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_CHAT_ID = int(os.environ.get("ADMIN_CHAT_ID", "0"))
 UPI_ID = os.environ.get("UPI_ID", "YOUR_UPI_ID@okaxis")
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 
-# Promo Codes
+# --- PROMO CODES CONFIGURATION ---
 PROMO_CODES = {
-    "WELCOME20": {"discount_percent": 15, "active": True},
-    "FESTIVAL10": {"discount_percent": 5, "active": True},
-    "FREEDOM50": {"discount_percent": 10, "active": False} 
+    "WELCOME20": {"discount_percent": 15, "active": True, "valid_until": "2026-12-31", "min_amount": 69},
+    "FESTIVAL10": {"discount_percent": 5, "active": True, "valid_until": "2026-12-31", "min_amount": 69},
 }
 
+# --- PACKAGES CONFIGURATION (Managed via Admin Commands) ---
+PACKAGES = {
+    100: 19,
+    200: 29,
+    300: 49,
+    500: 69,
+    1000: 119,
+    2500: 249,
+    5000: 499
+}
 
 WEBSITE_URL = "https://followxchange.store"
 INSTAGRAM_PAGE = "https://www.instagram.com/followxchangeofcl?igsh=MWpha3o5ODNpYXNmZQ=="
-
 
 LEGAL_FOOTER = (
     "\n\n⚖️ *Legal & Privacy Agreement:*\n"
@@ -47,13 +56,105 @@ LEGAL_FOOTER = (
     "⚠️ *Disclaimer:* FollowXchange is a 3rd-party growth service and is strictly NOT affiliated with, endorsed by, or connected to Instagram or Meta Platforms Inc."
 )
 
-
 WAITING_FOR_PROMO_DECISION, WAITING_FOR_PROMO, WAITING_FOR_SCREENSHOT, WAITING_FOR_USERNAME = range(4)
-
 
 ptb_app = Application.builder().token(BOT_TOKEN).build()
 
 
+# ==========================================
+#        ADMIN CONTROL COMMANDS
+# ==========================================
+
+async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Shows all admin commands (Only works for Admin)."""
+    if update.effective_chat.id != ADMIN_CHAT_ID:
+        return
+    text = (
+        "🛠 **ADMIN CONTROL PANEL** 🛠\n\n"
+        "**🎫 PROMO CODES:**\n"
+        "➕ Add: `/addpromo <CODE> <DISCOUNT_%> <YYYY-MM-DD> <MIN_RS>`\n"
+        "❌ Del: `/delpromo <CODE>`\n"
+        "📋 List: `/listpromo`\n\n"
+        "**📦 FOLLOWER PACKAGES:**\n"
+        "➕ Add/Edit: `/addpkg <FOLLOWERS> <PRICE_RS>`\n"
+        "❌ Del: `/delpkg <FOLLOWERS>`\n"
+        "📋 List: `/listpkg`"
+    )
+    await update.message.reply_text(text, parse_mode="Markdown")
+
+# --- PROMO COMMANDS ---
+async def add_promo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.id != ADMIN_CHAT_ID: return
+    try:
+        code = context.args[0].upper()
+        discount = int(context.args[1])
+        valid_until = context.args[2]
+        min_amount = float(context.args[3])
+        datetime.strptime(valid_until, "%Y-%m-%d") # Verify date format
+        PROMO_CODES[code] = {"discount_percent": discount, "active": True, "valid_until": valid_until, "min_amount": min_amount}
+        await update.message.reply_text(f"✅ **Promo Added!**\nCode: `{code}`\nDiscount: {discount}%\nValid till: {valid_until}\nMin Order: Rs {min_amount}", parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text("❌ Usage: `/addpromo <CODE> <DISCOUNT> <YYYY-MM-DD> <MIN_AMOUNT>`", parse_mode="Markdown")
+
+async def del_promo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.id != ADMIN_CHAT_ID: return
+    try:
+        code = context.args[0].upper()
+        if code in PROMO_CODES:
+            del PROMO_CODES[code]
+            await update.message.reply_text(f"🗑️ Promo code `{code}` deleted successfully!", parse_mode="Markdown")
+        else:
+            await update.message.reply_text(f"❌ Code `{code}` not found.", parse_mode="Markdown")
+    except Exception:
+        await update.message.reply_text("❌ Usage: `/delpromo <CODE>`", parse_mode="Markdown")
+
+async def list_promo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.id != ADMIN_CHAT_ID: return
+    if not PROMO_CODES:
+        await update.message.reply_text("No active promo codes right now.")
+        return
+    text = "🎟 **Active Promo Codes:**\n\n"
+    for code, data in PROMO_CODES.items():
+        text += f"▪️ **{code}** - {data['discount_percent']}% off (Min Rs {data['min_amount']}) | Till: {data['valid_until']}\n"
+    await update.message.reply_text(text, parse_mode="Markdown")
+
+# --- PACKAGE COMMANDS ---
+async def add_pkg(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.id != ADMIN_CHAT_ID: return
+    try:
+        followers = int(context.args[0])
+        price = int(context.args[1])
+        PACKAGES[followers] = price
+        await update.message.reply_text(f"✅ **Package Updated!**\n📦 Followers: {followers}\n💰 Price: Rs {price}", parse_mode="Markdown")
+    except Exception:
+        await update.message.reply_text("❌ Usage: `/addpkg <FOLLOWERS> <PRICE>`\nExample: `/addpkg 10000 899`", parse_mode="Markdown")
+
+async def del_pkg(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.id != ADMIN_CHAT_ID: return
+    try:
+        followers = int(context.args[0])
+        if followers in PACKAGES:
+            del PACKAGES[followers]
+            await update.message.reply_text(f"🗑️ Package for `{followers}` followers deleted!", parse_mode="Markdown")
+        else:
+            await update.message.reply_text(f"❌ Package for `{followers}` not found.", parse_mode="Markdown")
+    except Exception:
+        await update.message.reply_text("❌ Usage: `/delpkg <FOLLOWERS>`", parse_mode="Markdown")
+
+async def list_pkg(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.id != ADMIN_CHAT_ID: return
+    if not PACKAGES:
+        await update.message.reply_text("No active packages.")
+        return
+    text = "📦 **Active Follower Packages:**\n\n"
+    for followers in sorted(PACKAGES.keys()):
+        text += f"▪️ **{followers} Followers** - Rs {PACKAGES[followers]}\n"
+    await update.message.reply_text(text, parse_mode="Markdown")
+
+
+# ==========================================
+#          USER FACING BOT LOGIC
+# ==========================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Sends premium welcome message with 2 initial options."""
@@ -65,88 +166,61 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     welcome_text = (
         "🌟 **Welcome to the Premium FollowXchange Bot!** 🌟\n\n"
-        "Grow your Instagram presence securely with our high-quality, authentic followers. "
+        "Grow your Instagram presence securely with our high-quality, authentic followers.\n\n"
+        "🔥 *Pro Tip:* Follow our [Instagram Page]({INSTAGRAM_PAGE}) for daily exclusive Promo Codes!\n\n"
         "Please select an option below to get started:\n"
         f"{LEGAL_FOOTER}"
     )
     
-    
     if update.message:
-        await update.message.reply_text(
-            welcome_text,
-            reply_markup=reply_markup,
-            parse_mode="Markdown",
-            disable_web_page_preview=True
-        )
+        await update.message.reply_text(welcome_text, reply_markup=reply_markup, parse_mode="Markdown", disable_web_page_preview=True)
     elif update.callback_query:
-        await update.callback_query.edit_message_text(
-            welcome_text,
-            reply_markup=reply_markup,
-            parse_mode="Markdown",
-            disable_web_page_preview=True
-        )
+        await update.callback_query.edit_message_text(welcome_text, reply_markup=reply_markup, parse_mode="Markdown", disable_web_page_preview=True)
     return ConversationHandler.END
-
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Provides usage instructions."""
     help_text = (
         "ℹ️ **How to buy followers securely:**\n\n"
-        "1️⃣ Click on 'View Follower Packages' and select one.\n"
-        "2️⃣ Apply a Promo Code (if you have one) to get a discount.\n"
-        "3️⃣ Complete the payment safely using the provided UPI details.\n"
-        "4️⃣ Upload your successful payment screenshot here.\n"
-        "5️⃣ Enter your exact FollowXchange App username.\n"
-        "6️⃣ Wait for admin verification (usually 5 mins - 2 hours).\n\n"
-        f"Need more help? Contact our support via the website: {WEBSITE_URL}"
+        "1️⃣ Select a package from the menu.\n"
+        "2️⃣ Apply a Promo Code (if valid) to get a discount.\n"
+        "3️⃣ Complete payment using UPI.\n"
+        "4️⃣ Upload payment screenshot here.\n"
+        "5️⃣ Enter your App username for delivery.\n\n"
+        "🔥 *Follow us on Instagram for Daily Promo Codes:* "
+        f"[Click Here to Follow]({INSTAGRAM_PAGE})\n\n"
+        f"Support: {WEBSITE_URL}"
     )
     if update.message:
         await update.message.reply_text(help_text, parse_mode="Markdown", disable_web_page_preview=True)
     elif update.callback_query:
         keyboard = [[InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_home")]]
-        await update.callback_query.edit_message_text(
-            help_text, 
-            reply_markup=InlineKeyboardMarkup(keyboard), 
-            parse_mode="Markdown", 
-            disable_web_page_preview=True
-        )
-
+        await update.callback_query.edit_message_text(help_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown", disable_web_page_preview=True)
 
 async def main_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handles the 2 initial options on the welcome screen."""
+    """Dynamically loads packages from the PACKAGES dictionary."""
     query = update.callback_query
     await query.answer()
     
     if query.data == "show_packages":
-        keyboard = [
-            [InlineKeyboardButton("🛒 Buy 100 Followers (Rs 19)", callback_data="pkg_100_19")],
-            [InlineKeyboardButton("🛒 Buy 200 Followers (Rs 29)", callback_data="pkg_200_29")],
-            [InlineKeyboardButton("🛒 Buy 300 Followers (Rs 49)", callback_data="pkg_300_49")],
-            [InlineKeyboardButton("🛒 Buy 500 Followers (Rs 69)", callback_data="pkg_500_69")],
-            [InlineKeyboardButton("🛒 Buy 1000 Followers (Rs 119)", callback_data="pkg_1000_119")],
-            [InlineKeyboardButton("🛒 Buy 2500 Followers (Rs 249)", callback_data="pkg_2500_249")],
-            [InlineKeyboardButton("🛒 Buy 5000 Followers (Rs 499)", callback_data="pkg_5000_499")],
-            [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_home")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(
-            "📦 **Select your preferred followers package:**\nChoose a package below to proceed to checkout.",
-            reply_markup=reply_markup,
-            parse_mode="Markdown"
-        )
+        keyboard = []
+        # Sort and dynamically generate the buttons based on admin's list
+        for followers in sorted(PACKAGES.keys()):
+            price = PACKAGES[followers]
+            keyboard.append([InlineKeyboardButton(f"🛒 {followers} Followers (Rs {price})", callback_data=f"pkg_{followers}_{price}")])
+            
+        keyboard.append([InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_home")])
+        
+        await query.edit_message_text("📦 **Select your preferred package:**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     elif query.data == "help_info":
         await help_command(update, context)
     elif query.data == "back_home":
         await start(update, context)
 
-
 async def package_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handles package clicks and asks for promo code."""
     query = update.callback_query
     await query.answer()
-    
     _, followers_count, amount = query.data.split("_")
-    
     context.user_data["selected_followers"] = followers_count
     context.user_data["original_amount"] = float(amount)
     context.user_data["order_id"] = f"FX-{uuid.uuid4().hex[:6].upper()}" 
@@ -155,214 +229,101 @@ async def package_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🎟 Yes, I have a Promo Code", callback_data="promo_yes")],
         [InlineKeyboardButton("⏭ No, Skip to Payment", callback_data="promo_no")]
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(
-        f"📦 **Order Initiated (ID: {context.user_data['order_id']})**\n"
-        f"You selected **{followers_count} Followers** for **Rs {amount}**.\n\n"
-        f"💡 Do you have a promo code for a discount?",
-        reply_markup=reply_markup,
-        parse_mode="Markdown"
-    )
+    await query.edit_message_text(f"📦 **Order ID:** {context.user_data['order_id']}\nSelected: {followers_count} Followers for Rs {amount}.\n\n💡 Do you have a promo code?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     return WAITING_FOR_PROMO_DECISION
 
-
 async def promo_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handles promo code decision (Yes/No)."""
     query = update.callback_query
     await query.answer()
-    
     if query.data == "promo_yes":
-        await query.edit_message_text(
-            "🎟 **Enter your Promo Code:**\n\n"
-            "*(Type your promo code below and send it. Type `skip` if you changed your mind.)*",
-            parse_mode="Markdown"
-        )
+        await query.edit_message_text("🎟 **Enter your Promo Code:**\n\n*(Check our Instagram stories for daily codes!)*", parse_mode="Markdown")
         return WAITING_FOR_PROMO
     else:
         context.user_data["final_amount"] = context.user_data["original_amount"]
         context.user_data["promo_applied"] = "None"
         return await show_payment_details(update, context, is_query=True)
 
-
 async def promo_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Validates the entered promo code."""
     code = update.message.text.strip().upper()
-    
     if code.lower() == 'skip':
         context.user_data["final_amount"] = context.user_data["original_amount"]
         context.user_data["promo_applied"] = "None"
         return await show_payment_details(update, context, is_query=False)
 
+    orig_amount = context.user_data["original_amount"]
+    
+    # 1. Check if Code exists & Active
     if code in PROMO_CODES and PROMO_CODES[code]["active"]:
-        discount = PROMO_CODES[code]["discount_percent"]
-        orig_amount = context.user_data["original_amount"]
+        # 2. Date Check
+        exp_date = datetime.strptime(PROMO_CODES[code]["valid_until"], "%Y-%m-%d")
+        if datetime.now() > exp_date:
+            await update.message.reply_text("❌ **Code Expired.** Check our Instagram for fresh codes!", parse_mode="Markdown")
+            return WAITING_FOR_PROMO
         
+        # 3. Min Amount Check
+        if orig_amount <= PROMO_CODES[code]["min_amount"]:
+            await update.message.reply_text(f"❌ **Minimum order required is Rs {PROMO_CODES[code]['min_amount'] + 1}.**\nAdd more followers to use this code!", parse_mode="Markdown")
+            return WAITING_FOR_PROMO
+        
+        # Apply Discount
+        discount = PROMO_CODES[code]["discount_percent"]
         final_amount = orig_amount - (orig_amount * (discount / 100))
         context.user_data["final_amount"] = round(final_amount, 2)
         context.user_data["promo_applied"] = code
-        
-        await update.message.reply_text(
-            f"🎉 **Promo Code Accepted!**\n"
-            f"You got a {discount}% discount. Your new total is **Rs {context.user_data['final_amount']}**.",
-            parse_mode="Markdown"
-        )
+        await update.message.reply_text(f"🎉 **Promo Code Accepted!**\nNew Total: **Rs {context.user_data['final_amount']}**.", parse_mode="Markdown")
         return await show_payment_details(update, context, is_query=False)
     else:
-        await update.message.reply_text(
-            "❌ **Invalid or Expired Promo Code.**\n"
-            "Please try again or type `skip` to proceed without a discount.",
-            parse_mode="Markdown"
-        )
+        await update.message.reply_text(f"❌ **Invalid Promo Code.**\n*Follow our [Instagram]({INSTAGRAM_PAGE}) for daily codes!*", parse_mode="Markdown", disable_web_page_preview=True)
         return WAITING_FOR_PROMO
 
-
 async def show_payment_details(update: Update, context: ContextTypes.DEFAULT_TYPE, is_query=False):
-    """Displays final payment details and UPI link."""
     amount = context.user_data.get("final_amount")
     followers = context.user_data.get("selected_followers")
     order_id = context.user_data.get("order_id")
-    
     upi_url = f"upi://pay?pa={UPI_ID}&pn=FollowXchange&am={amount}&cu=INR&tr={order_id}"
     
-    text = (
-        f"🧾 **SECURE CHECKOUT**\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"🆔 **Order ID:** `{order_id}`\n"
-        f"📦 **Package:** {followers} Followers\n"
-        f"💰 **Total to Pay:** Rs {amount}\n\n"
-        f"💳 **HOW TO PAY:**\n"
-        f"1️⃣ Tap to copy UPI ID: `{UPI_ID}`\n"
-        f"2️⃣ Or use Auto-Pay Link: [Pay Now via UPI App]({upi_url})\n\n"
-        f"📸 **FINAL STEP:**\n"
-        f"Once payment is completed, please **Upload the Payment Screenshot** directly in this chat."
-        f"{LEGAL_FOOTER}"
-    )
-    
-    if is_query:
-        await update.callback_query.edit_message_text(text, parse_mode="Markdown", disable_web_page_preview=True)
-    else:
-        await update.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
-        
+    text = f"🧾 **SECURE CHECKOUT**\n🆔 `{order_id}`\n📦 {followers} Followers\n💰 **Rs {amount}**\n\n💳 **UPI:** `{UPI_ID}`\n[Pay Now via UPI App]({upi_url})\n\n📸 *After payment, upload the screenshot.*\n{LEGAL_FOOTER}"
+    if is_query: await update.callback_query.edit_message_text(text, parse_mode="Markdown", disable_web_page_preview=True)
+    else: await update.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
     return WAITING_FOR_SCREENSHOT
 
-
 async def screenshot_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Saves screenshot file ID and prompts for user platform handle with realistic timeframe."""
-    photo_file_id = update.message.photo[-1].file_id
-    context.user_data["screenshot_file_id"] = photo_file_id
-    
-    await update.message.reply_text(
-        "✅ **Screenshot Received Successfully!**\n\n"
-        "⏳ *Important Note: Payment verification is done manually. It usually takes between 5 minutes to 2 hours, but in rare cases may take up to 24 hours depending on network volume.*\n\n"
-        "⌨️ To proceed, please type your exact **FollowXchange Username** (without @) so we can locate your account:"
-    )
+    context.user_data["screenshot_file_id"] = update.message.photo[-1].file_id
+    await update.message.reply_text("✅ **Screenshot Received.**\n\n⏳ *Verification usually takes 5 mins - 2 hours (up to 24 hours max).*\n\n⌨️ Enter your **App Username**:")
     return WAITING_FOR_USERNAME
 
-
 async def username_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Forwards submission dataset directly to administrative terminal."""
     fx_username = update.message.text.strip()
     user_chat_id = update.message.chat_id
-    
     followers_count = context.user_data.get("selected_followers", "Unknown")
     amount = context.user_data.get("final_amount", "Unknown")
-    promo = context.user_data.get("promo_applied", "None")
     order_id = context.user_data.get("order_id", "Unknown")
-    screenshot = context.user_data.get("screenshot_file_id")
+    promo = context.user_data.get("promo_applied", "None")
     
-    await update.message.reply_text(
-        f"✅ **Order Submitted! (ID: {order_id})**\n\n"
-        "Your payment proof and username have been routed to our verification team. "
-        "You will receive a notification in this chat as soon as our admins process and approve it.\n\n"
-        "Thank you for choosing FollowXchange! ❤️"
-    )
+    await update.message.reply_text(f"✅ **Order {order_id} Submitted!**\nWe will notify you here once approved.")
     
-    admin_keyboard = [
-        [
-            InlineKeyboardButton("✅ Approve Order", callback_data=f"app_{user_chat_id}_{amount}_{followers_count}"),
-            InlineKeyboardButton("❌ Reject Order", callback_data=f"rej_{user_chat_id}_{amount}"),
-        ]
-    ]
-    admin_markup = InlineKeyboardMarkup(admin_keyboard)
-    
-    admin_caption = (
-        f"🚨 **NEW PAYMENT VERIFICATION** 🚨\n\n"
-        f"🆔 **Order ID:** `{order_id}`\n"
-        f"👤 **Username:** `{fx_username}`\n"
-        f"💬 **Telegram User ID:** `{user_chat_id}`\n"
-        f"📦 **Followers Requested:** {followers_count}\n"
-        f"💰 **Amount Paid:** Rs {amount}\n"
-        f"🎟 **Promo Used:** {promo}"
-    )
-    
-    await context.bot.send_photo(
-        chat_id=ADMIN_CHAT_ID,
-        photo=screenshot,
-        caption=admin_caption,
-        reply_markup=admin_markup,
-        parse_mode="Markdown"
-    )
-    
+    admin_keyboard = [[InlineKeyboardButton("✅ Approve", callback_data=f"app_{user_chat_id}_{amount}_{followers_count}"), InlineKeyboardButton("❌ Reject", callback_data=f"rej_{user_chat_id}_{amount}")]]
+    await context.bot.send_photo(chat_id=ADMIN_CHAT_ID, photo=context.user_data["screenshot_file_id"], caption=f"🚨 **NEW ORDER**\nOrder: {order_id}\nUser: {fx_username}\nAmount: Rs {amount}\nPromo: {promo}", reply_markup=InlineKeyboardMarkup(admin_keyboard))
     context.user_data.clear()
     return ConversationHandler.END
 
-
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Cancels active conversation tracking state sequence."""
-    await update.message.reply_text("❌ Action safely cancelled. Type /start when you are ready to order again.")
+async def cancel(update, context):
+    await update.message.reply_text("❌ Cancelled.")
     context.user_data.clear()
     return ConversationHandler.END
 
-
-async def admin_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Processes verification decisions returned from administrative inputs."""
+async def admin_decision(update, context):
     query = update.callback_query
     await query.answer()
-    
-    data_parts = query.data.split("_")
-    action = data_parts[0]
-    target_user_id = int(data_parts[1])
-    amount = data_parts[2]
-    
+    data = query.data.split("_")
+    action, target_user_id, amount = data[0], int(data[1]), data[2]
     if action == "app":
-        followers_count = data_parts[3]
-        
-        try:
-            await context.bot.send_message(
-                chat_id=target_user_id,
-                text=f"🥳 **PAYMENT APPROVED!**\n\n"
-                     f"Your purchase of **{followers_count} Followers** (Rs {amount}) has been successfully verified! "
-                     f"The followers will be routed to your account momentarily. Enjoy!\n\n"
-                     f"Need more? Just type /start to order again.",
-                parse_mode="Markdown"
-            )
-            
-            await query.edit_message_caption(
-                caption=f"{query.message.caption}\n\n🟢 **STATUS: APPROVED ✅**",
-                parse_mode="Markdown"
-            )
-        except Exception as e:
-            logger.error(f"Failed to message user {target_user_id}: {e}")
-            
-    elif action == "rej":
-        try:
-            await context.bot.send_message(
-                chat_id=target_user_id,
-                text=f"⚠️ **PAYMENT REJECTED**\n\n"
-                     f"We could not verify your payment of Rs {amount}. "
-                     f"Please ensure you uploaded a clear screenshot of a SUCCESSFUL transaction. "
-                     f"If you believe this is an error, please contact our support team on the website.",
-                parse_mode="Markdown"
-            )
-            await query.edit_message_caption(
-                caption=f"{query.message.caption}\n\n🔴 **STATUS: REJECTED ❌**",
-                parse_mode="Markdown"
-            )
-        except Exception as e:
-            logger.error(f"Failed to message user {target_user_id}: {e}")
-
-
+        followers_count = data[3]
+        await context.bot.send_message(chat_id=target_user_id, text=f"🥳 **PAYMENT APPROVED!**\n\nYour {followers_count} Followers (Rs {amount}) order is confirmed!")
+        await query.edit_message_caption(caption=f"{query.message.caption}\n\n🟢 **APPROVED ✅**")
+    else:
+        await context.bot.send_message(chat_id=target_user_id, text="⚠️ **PAYMENT REJECTED**\n\nScreenshot verification failed. Please contact support.")
+        await query.edit_message_caption(caption=f"{query.message.caption}\n\n🔴 **REJECTED ❌**")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -380,36 +341,29 @@ async def lifespan(app: FastAPI):
     ptb_app.add_handler(CommandHandler("start", start))
     ptb_app.add_handler(CommandHandler("help", help_command))
     
+    # Admin Management Commands
+    ptb_app.add_handler(CommandHandler("admin", admin_panel))
+    ptb_app.add_handler(CommandHandler("addpromo", add_promo))
+    ptb_app.add_handler(CommandHandler("delpromo", del_promo))
+    ptb_app.add_handler(CommandHandler("listpromo", list_promo))
+    ptb_app.add_handler(CommandHandler("addpkg", add_pkg))
+    ptb_app.add_handler(CommandHandler("delpkg", del_pkg))
+    ptb_app.add_handler(CommandHandler("listpkg", list_pkg))
     
     ptb_app.add_handler(CallbackQueryHandler(main_menu_handler, pattern="^(show_packages|help_info|back_home)$"))
-    
     ptb_app.add_handler(conv_handler)
     ptb_app.add_handler(CallbackQueryHandler(admin_decision, pattern="^(app|rej)_"))
-
+    
     await ptb_app.initialize()
     await ptb_app.start()
     await ptb_app.bot.set_webhook(url=f"{WEBHOOK_URL}/tgwebhook")
-    logger.info(f"Webhook set successfully to: {WEBHOOK_URL}/tgwebhook")
-    
     yield
-    
     await ptb_app.stop()
     await ptb_app.shutdown()
 
-
 app = FastAPI(lifespan=lifespan)
-
-
 @app.post("/tgwebhook")
 async def handle_webhook(request: Request):
-    """Transforms webhook requests directly into Telegram pipeline signals."""
     json_data = await request.json()
-    update = Update.de_json(json_data, ptb_app.bot)
-    await ptb_app.process_update(update)
+    await ptb_app.process_update(Update.de_json(json_data, ptb_app.bot))
     return Response(status_code=200)
-
-
-@app.get("/")
-async def health_check():
-    """Serves response patterns satisfying hosting target keepalive requirements."""
-    return {"status": "online", "platform": "FollowXchange Premium Bot"}
