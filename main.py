@@ -15,25 +15,25 @@ from telegram.ext import (
     ContextTypes,
 )
 
-# Enable logging
+
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Environment Variables Configuration
+
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_CHAT_ID = int(os.environ.get("ADMIN_CHAT_ID", "0"))
 UPI_ID = os.environ.get("UPI_ID", "YOUR_UPI_ID@okaxis")
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 
-# --- PROMO CODES CONFIGURATION ---
+
 PROMO_CODES = {
     "WELCOME20": {"discount_percent": 15, "active": True, "valid_until": "2026-12-31", "min_amount": 69},
     "FESTIVAL10": {"discount_percent": 5, "active": True, "valid_until": "2026-12-31", "min_amount": 69},
 }
 
-# --- PACKAGES CONFIGURATION (Managed via Admin Commands) ---
+
 PACKAGES = {
     100: 19,
     200: 29,
@@ -61,9 +61,6 @@ WAITING_FOR_PROMO_DECISION, WAITING_FOR_PROMO, WAITING_FOR_SCREENSHOT, WAITING_F
 ptb_app = Application.builder().token(BOT_TOKEN).build()
 
 
-# ==========================================
-#        ADMIN CONTROL COMMANDS
-# ==========================================
 
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Shows all admin commands (Only works for Admin)."""
@@ -82,7 +79,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(text, parse_mode="Markdown")
 
-# --- PROMO COMMANDS ---
+
 async def add_promo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ADMIN_CHAT_ID: return
     try:
@@ -118,7 +115,7 @@ async def list_promo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"▪️ **{code}** - {data['discount_percent']}% off (Min Rs {data['min_amount']}) | Till: {data['valid_until']}\n"
     await update.message.reply_text(text, parse_mode="Markdown")
 
-# --- PACKAGE COMMANDS ---
+
 async def add_pkg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ADMIN_CHAT_ID: return
     try:
@@ -152,9 +149,7 @@ async def list_pkg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode="Markdown")
 
 
-# ==========================================
-#          USER FACING BOT LOGIC
-# ==========================================
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Sends premium welcome message with 2 initial options."""
@@ -204,7 +199,7 @@ async def main_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if query.data == "show_packages":
         keyboard = []
-        # Sort and dynamically generate the buttons based on admin's list
+        
         for followers in sorted(PACKAGES.keys()):
             price = PACKAGES[followers]
             keyboard.append([InlineKeyboardButton(f"🛒 {followers} Followers (Rs {price})", callback_data=f"pkg_{followers}_{price}")])
@@ -252,20 +247,20 @@ async def promo_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     orig_amount = context.user_data["original_amount"]
     
-    # 1. Check if Code exists & Active
+    
     if code in PROMO_CODES and PROMO_CODES[code]["active"]:
-        # 2. Date Check
+        
         exp_date = datetime.strptime(PROMO_CODES[code]["valid_until"], "%Y-%m-%d")
         if datetime.now() > exp_date:
             await update.message.reply_text("❌ **Code Expired.** Check our Instagram for fresh codes!", parse_mode="Markdown")
             return WAITING_FOR_PROMO
         
-        # 3. Min Amount Check
+        
         if orig_amount <= PROMO_CODES[code]["min_amount"]:
             await update.message.reply_text(f"❌ **Minimum order required is Rs {PROMO_CODES[code]['min_amount'] + 1}.**\nAdd more followers to use this code!", parse_mode="Markdown")
             return WAITING_FOR_PROMO
         
-        # Apply Discount
+        
         discount = PROMO_CODES[code]["discount_percent"]
         final_amount = orig_amount - (orig_amount * (discount / 100))
         context.user_data["final_amount"] = round(final_amount, 2)
@@ -341,7 +336,7 @@ async def lifespan(app: FastAPI):
     ptb_app.add_handler(CommandHandler("start", start))
     ptb_app.add_handler(CommandHandler("help", help_command))
     
-    # Admin Management Commands
+    
     ptb_app.add_handler(CommandHandler("admin", admin_panel))
     ptb_app.add_handler(CommandHandler("addpromo", add_promo))
     ptb_app.add_handler(CommandHandler("delpromo", del_promo))
